@@ -1,0 +1,44 @@
+body {
+  margin: 0;
+  height: 100vh;
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: Arial;
+  color: #00ffcc;
+}
+
+.box {
+  text-align: center;
+}
+
+.earth {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #00ffcc, #001);
+  box-shadow: 0 0 40px #00ffcc;
+  animation: spin 6s linear infinite;
+  margin: auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#num {
+  font-size: 80px;
+  margin-top: 20px;
+  text-shadow: 0 0 25px #00ffcc;
+}
+
+#status {
+  margin-top: 8px;
+  opacity: 0.8;
+}
+
+#timer {
+  margin-top: 5px;
+  font-size: 20px;
+}
