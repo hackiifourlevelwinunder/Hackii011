@@ -8,7 +8,7 @@ app.use(express.static("public"));
 let currentRound = null;
 let history = [];
 
-/* ================= TIME ================= */
+/* ================ TIME ================ */
 
 function getIST() {
   const now = new Date();
@@ -16,11 +16,12 @@ function getIST() {
   return new Date(utc + 19800000);
 }
 
-/* ================= PERIOD ================= */
+/* ================ PERIOD ================ */
 
 function getPeriod(now) {
   const reset = new Date(now);
   reset.setHours(5, 30, 0, 0);
+
   if (now < reset) reset.setDate(reset.getDate() - 1);
 
   const y = reset.getFullYear();
@@ -33,10 +34,10 @@ function getPeriod(now) {
   return `${y}${m}${d}10001${roundIndex}`;
 }
 
-/* ================= PRNG ================= */
+/* ================ PRNG ================ */
 
-// Xorshift32
-function xorshift32(seed) {
+// Xorshift32 stream
+function createXorShift(seed) {
   let x = seed >>> 0;
   return () => {
     x ^= x << 13;
@@ -46,56 +47,38 @@ function xorshift32(seed) {
   };
 }
 
-// SplitMix64
-function splitmix64(seed) {
-  let x = BigInt(seed);
-  return () => {
-    x += 0x9E3779B97F4A7C15n;
-    let z = x;
-    z = (z ^ (z >> 30n)) * 0xBF58476D1CE4E5B9n;
-    z = (z ^ (z >> 27n)) * 0x94D049BB133111EBn;
-    z = z ^ (z >> 31n);
-    return Number(z & 0xffffffffn) / 4294967296;
-  };
-}
+/* ================ 51000 RNG CALCULATION (LOGIC SAME) ================ */
 
-/* ================= 51 HYBRID RNG ================= */
-
-function run51HybridRNG() {
+function run51000RNG() {
   const freq = {};
-  const baseSeed = Date.now();
+  const baseSeed = Date.now() ^ crypto.randomInt(0, 100000);
 
-  // 1–30 : Modern PRNG (Xorshift)
-  for (let i = 0; i < 30; i++) {
-    const rng = xorshift32(baseSeed + i * 97);
-    const n = Math.floor(rng() * 10);
+  const rng = createXorShift(baseSeed);
+
+  // 🔥 MAIN CHANGE HERE
+  for (let i = 0; i < 51000; i++) {
+    const n = Math.floor(rng() * 10);   // 0–9
     freq[n] = (freq[n] || 0) + 1;
   }
 
-  // 31–45 : SplitMix64 (strong statistical)
-  for (let i = 30; i < 45; i++) {
-    const rng = splitmix64(baseSeed + i * 131);
-    const n = Math.floor(rng() * 10);
-    freq[n] = (freq[n] || 0) + 1;
-  }
-
-  // 46–51 : Cryptographic RNG
-  for (let i = 45; i < 51; i++) {
-    const n = crypto.randomInt(0, 10);
-    freq[n] = (freq[n] || 0) + 1;
-  }
-
-  // Big / Small (logic SAME)
+  // Big / Small (exact wahi rule)
   let small = 0, big = 0;
-  for (let i = 0; i <= 4; i++) small += freq[i] || 0;
-  for (let i = 5; i <= 9; i++) big += freq[i] || 0;
+
+  for (let i = 0; i <= 4; i++) {
+    small += freq[i] || 0;
+  }
+
+  for (let i = 5; i <= 9; i++) {
+    big += freq[i] || 0;
+  }
 
   const group = small > big ? "SMALL" : "BIG";
   const range = group === "SMALL" ? [0, 4] : [5, 9];
 
-  // Final number = max frequency in winning group
+  // Final = max frequency inside winning group
   let final = range[0];
   let max = -1;
+
   for (let i = range[0]; i <= range[1]; i++) {
     if ((freq[i] || 0) > max) {
       max = freq[i] || 0;
@@ -106,38 +89,42 @@ function run51HybridRNG() {
   return { final, group };
 }
 
-/* ================= ROUND FLOW ================= */
+/* ================ ROUND FLOW ================ */
 
 setInterval(() => {
   const now = getIST();
   const sec = now.getSeconds();
 
+  // NEW ROUND START
   if (sec === 0) {
     currentRound = {
       period: getPeriod(now),
-      ...run51HybridRNG(), // 🔥 51 HYBRID RNG
+      ...run51000RNG(),   // 🔥 51000 RNG used
       locked: false
     };
   }
 
+  // FINAL LOCK + HISTORY ADD
   if (sec === 59 && currentRound && !currentRound.locked) {
     currentRound.locked = true;
+
     history.unshift({
       period: currentRound.period,
       result: currentRound.final,
       group: currentRound.group,
       time: now.toLocaleTimeString()
     });
-    history = history.slice(0, 50);
+
+    history = history.slice(0, 50); // max 50 wahi
   }
+
 }, 1000);
 
-/* ================= API ================= */
+/* ================ API ================ */
 
 app.get("/api/state", (req, res) => {
-  const now = getIST();
   res.json({
-    seconds: now.getSeconds(),
+    seconds: getIST().getSeconds(),
     round: currentRound,
     history
   });
